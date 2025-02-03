@@ -16,16 +16,23 @@ export default function Settings({ userId }: { userId: string }) {
   const [newStyleAccount, setNewStyleAccount] = useState('');
 
   useEffect(() => {
+    console.log('Settings component mounted with userId:', userId);
+    if (!userId) {
+      console.error('No userId provided to Settings component');
+      return;
+    }
     loadPreferences();
   }, [userId]);
 
   async function loadPreferences() {
     try {
+      console.log('Loading preferences for userId:', userId);
       const prefs = await getUserPreferences(userId);
+      console.log('Loaded preferences:', prefs);
       setPreferences(prefs);
     } catch (error) {
-      toast.error('Failed to load preferences');
       console.error('Error loading preferences:', error);
+      toast.error('Failed to load preferences');
     } finally {
       setLoading(false);
     }
@@ -33,15 +40,15 @@ export default function Settings({ userId }: { userId: string }) {
 
   async function handleAddMonitoredAccount(e: React.FormEvent) {
     e.preventDefault();
-    console.log('Adding account:', newMonitoredAccount);
-    if (!newMonitoredAccount || !preferences) {
-      console.log('Missing data:', { newMonitoredAccount, preferences });
-      return;
-    }
+    if (!newMonitoredAccount || !preferences) return;
 
     try {
-      const username = newMonitoredAccount.replace('@', '');
-      console.log('Fetching user:', username);
+      const username = newMonitoredAccount.replace('@', '').trim();
+      
+      if (!username) {
+        toast.error('Please enter a valid username');
+        return;
+      }
       
       if (preferences.monitored_accounts.includes(username)) {
         toast.error('This account is already being monitored');
@@ -49,31 +56,26 @@ export default function Settings({ userId }: { userId: string }) {
       }
 
       const user = await getUserByUsername(username);
-      console.log('User data:', user);
-      
       if (!user) {
         toast.error('Twitter account not found');
         return;
       }
 
-      const updatedAccounts = [...preferences.monitored_accounts, username];
-      console.log('Updating preferences with:', updatedAccounts);
-      
+      const updatedAccounts = [...(preferences.monitored_accounts || []), username];
       await updateUserPreferences(userId, {
         ...preferences,
         monitored_accounts: updatedAccounts,
       });
       
-      toast.success('Account added to monitoring list');
+      toast.success('Account added successfully');
       await loadPreferences();
       setNewMonitoredAccount('');
     } catch (error) {
-      console.error('Detailed error:', error);
+      console.error('Error adding account:', error);
       if (error instanceof TwitterClientError) {
-        toast.error(`Failed to add account: ${error.error.message}`);
+        toast.error(`Twitter API error: ${error.error.message}`);
       } else {
         toast.error('Failed to add account. Please try again.');
-        console.error('Error adding monitored account:', error);
       }
     }
   }
@@ -106,8 +108,8 @@ export default function Settings({ userId }: { userId: string }) {
       toast.success('Settings saved successfully');
       await loadPreferences();
     } catch (error) {
-      toast.error('Failed to save settings');
       console.error('Error saving preferences:', error);
+      toast.error('Failed to save settings');
     } finally {
       setSaving(false);
     }
@@ -133,11 +135,14 @@ export default function Settings({ userId }: { userId: string }) {
 
         <form onSubmit={handleAddMonitoredAccount} className="flex gap-2">
           <input
+            id="monitored-account"
+            name="monitored-account"
             type="text"
             value={newMonitoredAccount}
             onChange={(e) => setNewMonitoredAccount(e.target.value)}
             placeholder="Twitter username"
             className="flex-1 px-3 py-2 border rounded-md bg-background"
+            required
           />
           <button
             type="submit"
@@ -173,6 +178,8 @@ export default function Settings({ userId }: { userId: string }) {
         </p>
 
         <textarea
+          id="custom-instructions"
+          name="custom-instructions"
           value={preferences.custom_instructions}
           onChange={(e) =>
             setPreferences({

@@ -2,19 +2,20 @@
 
 import { useSession } from "next-auth/react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Twitter } from "lucide-react";
 import { useEffect } from "react";
 
 export default function Home() {
   const { data: session } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    if (session) {
+    if (session && pathname === '/') {
       router.push("/dashboard");
     }
-  }, [session, router]);
+  }, [session, router, pathname]);
 
   const handleSignIn = async () => {
     await signIn("twitter", {
@@ -23,7 +24,7 @@ export default function Home() {
   };
 
   if (session) {
-    return null; // Return null while redirecting
+    return null;
   }
 
   return (

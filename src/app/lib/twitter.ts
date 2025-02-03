@@ -27,7 +27,7 @@ export type TwitterError = {
 };
 
 export class TwitterClientError extends Error {
-  constructor(public error: TwitterError) {
+  constructor(public error: any) {
     super(error.message);
     this.name = 'TwitterClientError';
   }
@@ -41,10 +41,7 @@ export async function postTweet(text: string, reply_to?: string) {
     return tweet.data;
   } catch (error) {
     console.error('Error posting tweet:', error);
-    throw new TwitterClientError({
-      code: (error as any)?.code || 500,
-      message: (error as any)?.message || 'Failed to post tweet',
-    });
+    throw new TwitterClientError(error);
   }
 }
 
@@ -66,27 +63,23 @@ export async function setupWebhook(webhookUrl: string) {
     return webhook.data;
   } catch (error) {
     console.error('Error setting up webhook:', error);
-    throw new TwitterClientError({
-      code: (error as any)?.code || 500,
-      message: (error as any)?.message || 'Failed to setup webhook',
-    });
+    throw new TwitterClientError(error);
   }
 }
 
 export async function getUserByUsername(username: string) {
   try {
-    console.log('Looking up user:', username);
-    // Remove @ symbol if present
-    username = username.replace('@', '');
+    const client = new TwitterApi(process.env.NEXT_PUBLIC_TWITTER_BEARER_TOKEN!);
     const user = await client.v2.userByUsername(username);
-    console.log('User lookup result:', user);
+    
+    if (!user.data) {
+      return null;
+    }
+
     return user.data;
   } catch (error) {
     console.error('Twitter API error:', error);
-    throw new TwitterClientError({
-      code: (error as any)?.code || 500,
-      message: (error as any)?.message || 'Failed to fetch user',
-    });
+    throw new TwitterClientError(error);
   }
 }
 
@@ -110,19 +103,13 @@ export async function startUserStream(userId: string, onTweet: (tweet: Tweet) =>
 
     stream.on('error', (error) => {
       console.error('Stream error:', error);
-      throw new TwitterClientError({
-        code: (error as any)?.code || 500,
-        message: (error as any)?.message || 'Stream error occurred',
-      });
+      throw new TwitterClientError(error);
     });
 
     return stream;
   } catch (error) {
     console.error('Error starting stream:', error);
-    throw new TwitterClientError({
-      code: (error as any)?.code || 500,
-      message: (error as any)?.message || 'Failed to start stream',
-    });
+    throw new TwitterClientError(error);
   }
 }
 

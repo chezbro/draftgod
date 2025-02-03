@@ -7,7 +7,14 @@ if (!supabaseUrl || !supabaseKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+console.log('Initializing Supabase client with URL:', supabaseUrl);
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true
+  }
+});
 
 export interface DraftTweet {
   id: string;
@@ -43,13 +50,47 @@ export async function getDraftTweets(userId: string): Promise<DraftTweet[]> {
 }
 
 export async function getUserPreferences(userId: string): Promise<UserPreferences | null> {
+  if (!userId) {
+    throw new Error('userId is required');
+  }
+
+  // First try to get existing preferences
   const { data, error } = await supabase
     .from('user_preferences')
     .select('*')
     .eq('user_id', userId)
     .single();
 
-  if (error && error.code !== 'PGRST116') throw error;
+  // If no preferences exist, create default ones
+  if (error && (error.code === 'PGRST116' || error.message === 'No rows returned')) {
+    console.log('Creating default preferences for user:', userId);
+    
+    const defaultPreferences: Partial<UserPreferences> = {
+      user_id: userId,
+      monitored_accounts: [],
+      style_accounts: [],
+      custom_instructions: '',
+    };
+    
+    const { data: newData, error: insertError } = await supabase
+      .from('user_preferences')
+      .insert(defaultPreferences)
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('Error creating default preferences:', insertError);
+      throw insertError;
+    }
+
+    return newData;
+  }
+
+  if (error) {
+    console.error('Unexpected Supabase error:', error);
+    throw error;
+  }
+  
   return data;
 }
 
@@ -61,11 +102,18 @@ export async function updateUserPreferences(
     .from('user_preferences')
     .upsert({
       user_id: userId,
-      ...preferences,
+      monitored_accounts: preferences.monitored_accounts || [],
+      style_accounts: preferences.style_accounts || [],
+      custom_instructions: preferences.custom_instructions || '',
       updated_at: new Date().toISOString(),
-    });
+    })
+    .select()
+    .single();
 
-  if (error) throw error;
+  if (error) {
+    console.error('Supabase error:', error);
+    throw error;
+  }
 }
 
 export async function saveDraftTweet(draft: Omit<DraftTweet, 'id' | 'created_at' | 'updated_at'>): Promise<void> {

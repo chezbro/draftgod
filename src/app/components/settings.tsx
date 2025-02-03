@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { UserPreferences, getUserPreferences, updateUserPreferences } from '@/app/lib/db';
 import { getUserByUsername } from '@/app/lib/twitter';
 import { Plus, X, Save } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function Settings({ userId }: { userId: string }) {
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
@@ -18,10 +19,13 @@ export default function Settings({ userId }: { userId: string }) {
 
   async function loadPreferences() {
     try {
+      console.log('Loading preferences for userId:', userId);
       const userPrefs = await getUserPreferences(userId);
+      console.log('Loaded preferences:', userPrefs);
       setPreferences(userPrefs);
     } catch (error) {
       console.error('Error loading preferences:', error);
+      toast.error('Failed to load preferences');
     } finally {
       setLoading(false);
     }
@@ -32,19 +36,43 @@ export default function Settings({ userId }: { userId: string }) {
     if (!newMonitoredAccount || !preferences) return;
 
     try {
-      const user = await getUserByUsername(newMonitoredAccount);
-      if (!user) throw new Error('User not found');
+      const username = newMonitoredAccount.replace('@', '').trim();
+      
+      if (!username) {
+        toast.error('Please enter a valid username');
+        return;
+      }
+      
+      console.log('Current monitored accounts:', preferences.monitored_accounts);
+      if (preferences.monitored_accounts.includes(username)) {
+        toast.error('This account is already being monitored');
+        return;
+      }
 
-      const updatedAccounts = [...preferences.monitored_accounts, newMonitoredAccount];
+      const user = await getUserByUsername(username);
+      if (!user) {
+        toast.error('Twitter account not found');
+        return;
+      }
+
+      const updatedAccounts = [...(preferences.monitored_accounts || []), username];
+      console.log('Updating with new accounts:', updatedAccounts);
+      
       await updateUserPreferences(userId, {
         ...preferences,
         monitored_accounts: updatedAccounts,
       });
       
+      toast.success('Account added successfully');
       await loadPreferences();
       setNewMonitoredAccount('');
     } catch (error) {
       console.error('Error adding account:', error);
+      if (error instanceof TwitterClientError) {
+        toast.error(`Twitter API error: ${error.error.message}`);
+      } else {
+        toast.error('Failed to add account. Please try again.');
+      }
     }
   }
 
@@ -102,24 +130,27 @@ export default function Settings({ userId }: { userId: string }) {
             type="text"
             value={newMonitoredAccount}
             onChange={(e) => setNewMonitoredAccount(e.target.value)}
-            placeholder="@username"
-            className="flex-1 px-4 py-2 rounded-lg border border-foreground/10 bg-background focus:outline-none focus:ring-2 focus:ring-foreground/20"
+            placeholder="Twitter username"
+            className="flex-1 px-3 py-2 border rounded-md bg-background"
+            required
           />
           <button
             type="submit"
-            className="p-2 hover:bg-foreground/5 rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-foreground text-background rounded-md hover:bg-foreground/90"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-4 h-4" />
+            Add
           </button>
         </form>
 
         <div className="flex flex-wrap gap-2">
-          {preferences?.monitored_accounts.map((account) => (
+          {console.log('Rendering monitored accounts:', preferences?.monitored_accounts)}
+          {preferences?.monitored_accounts?.map((account) => (
             <div
               key={account}
-              className="flex items-center gap-2 px-3 py-1 rounded-full bg-foreground/5"
+              className="flex items-center justify-between px-3 py-2 border rounded-md"
             >
-              <span>{account}</span>
+              <span>@{account}</span>
               <button
                 onClick={() => {
                   if (!preferences) return;
@@ -130,12 +161,17 @@ export default function Settings({ userId }: { userId: string }) {
                     ),
                   });
                 }}
-                className="hover:text-red-500 transition-colors"
+                className="text-red-500 hover:text-red-600"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           ))}
+          {(!preferences?.monitored_accounts || preferences.monitored_accounts.length === 0) && (
+            <div className="text-foreground/60 text-sm">
+              No accounts being monitored yet
+            </div>
+          )}
         </div>
       </section>
 

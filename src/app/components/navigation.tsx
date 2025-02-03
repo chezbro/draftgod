@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useSession, signIn, signOut } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
 import { Home, Settings as SettingsIcon, LogOut } from 'lucide-react';
 
 export function Navigation() {
@@ -17,7 +17,7 @@ export function Navigation() {
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center gap-8">
             <Link 
-              href="/dashboard"
+              href="/"
               className="text-xl font-bold"
             >
               DraftGod
