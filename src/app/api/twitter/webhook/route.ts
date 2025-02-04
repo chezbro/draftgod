@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { NextRequest } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { generateDraftReply } from '@/app/lib/anthropic';

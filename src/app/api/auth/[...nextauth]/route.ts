@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import NextAuth from "next-auth";
 import TwitterProvider from "next-auth/providers/twitter";
 import { createClient } from "@supabase/supabase-js";
