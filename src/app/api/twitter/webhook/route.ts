@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { generateDraftReply } from '@/app/lib/anthropic';
 import { getUserPreferences, saveDraftTweet } from '@/app/lib/db';
 import { createHmac } from 'crypto';
-import { notifyUser } from '../socket/route';
+import { notifyUser } from '@/app/lib/socket';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
