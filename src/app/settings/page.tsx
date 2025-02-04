@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { redirect } from "next/navigation";
 import Settings from "@/app/components/settings";
+import { authOptions } from "@/app/lib/auth";
 
 export default async function SettingsPage() {
   console.log("Settings page component rendering"); // Debug log
