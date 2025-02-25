@@ -127,3 +127,86 @@ export async function saveDraftTweet(draft: Omit<DraftTweet, 'id' | 'created_at'
 
   if (error) throw error;
 }
+
+// Store user tweets in Supabase
+export async function storeUserTweets(username: string, tweets: any[]) {
+  try {
+    // First, check if we already have recent tweets for this user
+    const { data: existingData } = await supabase
+      .from('cached_user_tweets')
+      .select('*')
+      .eq('username', username)
+      .single();
+    
+    const now = new Date();
+    
+    if (existingData) {
+      // Check if the cache is still fresh (less than 24 hours old)
+      const lastUpdated = new Date(existingData.updated_at);
+      const hoursSinceUpdate = (now.getTime() - lastUpdated.getTime()) / (1000 * 60 * 60);
+      
+      if (hoursSinceUpdate < 24) {
+        console.log(`Using cached tweets for ${username}, last updated ${hoursSinceUpdate.toFixed(1)} hours ago`);
+        return existingData.tweets;
+      }
+      
+      // Update the existing record
+      const { data } = await supabase
+        .from('cached_user_tweets')
+        .update({
+          tweets: tweets,
+          updated_at: now.toISOString()
+        })
+        .eq('username', username)
+        .select();
+      
+      return data?.[0]?.tweets || tweets;
+    } else {
+      // Insert a new record
+      const { data } = await supabase
+        .from('cached_user_tweets')
+        .insert({
+          username: username,
+          tweets: tweets,
+          created_at: now.toISOString(),
+          updated_at: now.toISOString()
+        })
+        .select();
+      
+      return data?.[0]?.tweets || tweets;
+    }
+  } catch (error) {
+    console.error('Error storing user tweets in Supabase:', error);
+    // Return the original tweets if we couldn't cache them
+    return tweets;
+  }
+}
+
+// Get cached user tweets from Supabase, with option to accept stale data
+export async function getCachedUserTweets(username: string, acceptStale = false) {
+  try {
+    const { data } = await supabase
+      .from('cached_user_tweets')
+      .select('*')
+      .eq('username', username)
+      .single();
+    
+    if (data) {
+      const lastUpdated = new Date(data.updated_at);
+      const now = new Date();
+      const hoursSinceUpdate = (now.getTime() - lastUpdated.getTime()) / (1000 * 60 * 60);
+      
+      // Check if the cache is still fresh (less than 24 hours old) or we accept stale data
+      if (hoursSinceUpdate < 24 || acceptStale) {
+        const freshness = acceptStale && hoursSinceUpdate >= 24 ? 'stale' : 'fresh';
+        console.log(`Using ${freshness} cached tweets for ${username}, last updated ${hoursSinceUpdate.toFixed(1)} hours ago`);
+        return data.tweets;
+      }
+    }
+    
+    return null; // Cache miss or stale cache that we don't want to use
+  } catch (error) {
+    console.error('Error getting cached user tweets from Supabase:', error);
+    return null;
+  }
+}

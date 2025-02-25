@@ -55,7 +55,13 @@ export default function Settings({ userId }: { userId: string }) {
         return;
       }
 
-      const user = await getUserByUsername(username);
+      const response = await fetch(`/api/twitter/lookup?username=${username}`);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to lookup Twitter user');
+      }
+      
+      const user = await response.json();
       if (!user) {
         toast.error('Twitter account not found');
         return;
@@ -72,11 +78,7 @@ export default function Settings({ userId }: { userId: string }) {
       setNewMonitoredAccount('');
     } catch (error) {
       console.error('Error adding account:', error);
-      if (error instanceof TwitterClientError) {
-        toast.error(`Twitter API error: ${error.error.message}`);
-      } else {
-        toast.error('Failed to add account. Please try again.');
-      }
+      toast.error(error instanceof Error ? error.message : 'Failed to add account. Please try again.');
     }
   }
 
