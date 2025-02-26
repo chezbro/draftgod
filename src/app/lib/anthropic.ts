@@ -50,42 +50,74 @@ export async function generateDraftReply({
     console.log('System prompt:', systemPrompt);
     console.log('Original tweet:', originalTweet);
 
-    const message = await anthropic.messages.create({
-      model: 'claude-3-sonnet-20240229',
-      max_tokens: 150,
-      temperature: 0.7,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: `Create a reply to this tweet: "${originalTweet}"\n\nMake sure the reply is engaging, appropriate, and within Twitter's character limit. Return only the reply text.`,
-        },
-      ],
-    });
-
-    console.log('Anthropic API response:', JSON.stringify(message.content));
-
-    // Access the text content safely
-    if (message.content && message.content.length > 0 && message.content[0].type === 'text') {
-      // Make sure we're accessing the text content correctly
-      const textContent = message.content[0].text || message.content[0].value;
-      
-      if (textContent) {
-        const replyText = textContent.trim();
-        console.log('Generated reply:', replyText);
+    // Add retry logic
+    const maxRetries = 3;
+    let retryCount = 0;
+    let backoffTime = 1000; // Start with 1 second delay
+    
+    while (retryCount < maxRetries) {
+      try {
+        const message = await anthropic.messages.create({
+          model: 'claude-3-sonnet-20240229',
+          max_tokens: 80,
+          temperature: 0.7,
+          system: systemPrompt + "\n\nKeep your replies concise and under 100 characters when possible.",
+          messages: [
+            {
+              role: 'user',
+              content: `Create a short, concise reply to this tweet: "${originalTweet}"\n\nMake sure the reply is engaging, appropriate, and brief (ideally under 100 characters). Return only the reply text.`,
+            },
+          ],
+        });
         
-        if (!replyText) {
-          console.error('Empty reply text received from Anthropic API');
-          return "Sorry, I couldn't generate a meaningful reply. Please try again.";
+        console.log('Anthropic API response:', JSON.stringify(message.content));
+
+        // Access the text content safely
+        if (message.content && message.content.length > 0 && message.content[0].type === 'text') {
+          // Access the text content correctly using only the text property
+          const textContent = message.content[0].text;
+          
+          if (textContent) {
+            const replyText = textContent.trim();
+            console.log('Generated reply:', replyText);
+            
+            if (!replyText) {
+              console.error('Empty reply text received from Anthropic API');
+              return "Sorry, I couldn't generate a meaningful reply. Please try again.";
+            }
+            
+            return replyText;
+          }
         }
         
-        return replyText;
+        // If we get here, the response format wasn't as expected
+        console.error('Unexpected response format from Anthropic API:', message.content);
+        return "Sorry, I couldn't generate a reply due to an unexpected API response format.";
+      } catch (error: any) {
+        // Check if it's an overloaded error
+        if (error.status === 529 || (error.error && error.error.type === 'overloaded_error')) {
+          retryCount++;
+          
+          if (retryCount >= maxRetries) {
+            console.error(`Failed after ${maxRetries} retries due to Anthropic API overload`);
+            throw new Error('Anthropic API is currently overloaded. Please try again later.');
+          }
+          
+          console.log(`Anthropic API overloaded. Retrying in ${backoffTime/1000} seconds... (Attempt ${retryCount}/${maxRetries})`);
+          
+          // Wait before retrying with exponential backoff
+          await new Promise(resolve => setTimeout(resolve, backoffTime));
+          backoffTime *= 2; // Exponential backoff
+        } else {
+          // For other errors, throw immediately
+          console.error('Anthropic API error:', error);
+          throw error;
+        }
       }
     }
     
-    // If we get here, the response format wasn't as expected
-    console.error('Unexpected response format from Anthropic API:', message.content);
-    return "Sorry, I couldn't generate a reply due to an unexpected API response format.";
+    // This should never be reached due to the throw in the loop
+    throw new Error('Unexpected error in retry logic');
   } catch (error: any) {
     console.error('Anthropic API error:', error);
     

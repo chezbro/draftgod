@@ -15,6 +15,7 @@ export default function TweetReplyGenerator() {
   const [loading, setLoading] = useState(false);
   const [drafts, setDrafts] = useState<DraftReply[]>([]);
   const [useRealApi, setUseRealApi] = useState(false);
+  const [currentTweetId, setCurrentTweetId] = useState<string | null>(null);
 
   async function extractTweetId(url: string): Promise<string | null> {
     // Clean the URL first (remove any @ or other characters at the beginning)
@@ -44,6 +45,9 @@ export default function TweetReplyGenerator() {
         return;
       }
       
+      // Store the current tweet ID for regeneration
+      setCurrentTweetId(tweetId);
+      
       const response = await fetch('/api/drafts/generate', {
         method: 'POST',
         headers: {
@@ -63,10 +67,47 @@ export default function TweetReplyGenerator() {
       
       const data = await response.json();
       setDrafts(data.drafts);
-      toast.success('Draft replies generated successfully!');
+      toast.success('Draft reply generated successfully!');
     } catch (error) {
       console.error('Error generating drafts:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to generate drafts');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRegenerateDraft() {
+    if (!currentTweetId) {
+      toast.error('No tweet selected for regeneration');
+      return;
+    }
+    
+    setLoading(true);
+    
+    try {
+      const response = await fetch('/api/drafts/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tweetId: currentTweetId,
+          styleAccount: styleAccount.replace('@', '').trim(),
+          useMock: !useRealApi,
+        }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to regenerate draft');
+      }
+      
+      const data = await response.json();
+      setDrafts(data.drafts);
+      toast.success('Draft reply regenerated successfully!');
+    } catch (error) {
+      console.error('Error regenerating draft:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to regenerate draft');
     } finally {
       setLoading(false);
     }
@@ -164,14 +205,24 @@ export default function TweetReplyGenerator() {
               Generating...
             </>
           ) : (
-            'Generate Draft Replies'
+            'Generate Draft Reply'
           )}
         </button>
       </form>
       
       {drafts.length > 0 && (
         <div className="space-y-4">
-          <h3 className="text-xl font-semibold">Draft Replies ({drafts.length})</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-semibold">Draft Reply</h3>
+            <button
+              onClick={handleRegenerateDraft}
+              disabled={loading || !currentTweetId}
+              className="flex items-center gap-2 px-3 py-1 text-sm bg-foreground/10 rounded-md hover:bg-foreground/20 disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+              Regenerate
+            </button>
+          </div>
           <div className="space-y-4">
             {drafts.map((draft) => (
               <div key={draft.id} className="p-4 border rounded-md bg-background/50">

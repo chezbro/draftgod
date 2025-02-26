@@ -52,9 +52,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate multiple draft replies
+    // Generate a single draft reply instead of multiple
     const styleAccounts = styleAccount ? [styleAccount] : [];
-    const numDrafts = 3; // Generate 3 draft replies
     
     // Get style examples if a style account is specified
     let styleExamples = '';
@@ -87,25 +86,22 @@ export async function POST(request: NextRequest) {
       process.env.MOCK_ANTHROPIC_API = 'false';
     }
 
-    const draftPromises = Array(numDrafts).fill(0).map(() => 
-      generateDraftReply({
-        originalTweet: tweet.text,
-        styleAccounts,
-        styleExamples,
-        customInstructions: '',
-      })
-    );
+    // Generate just one draft instead of multiple
+    const draftText = await generateDraftReply({
+      originalTweet: tweet.text,
+      styleAccounts,
+      styleExamples,
+      customInstructions: '',
+    });
     
-    const draftTexts = await Promise.all(draftPromises);
-    
-    // Format the drafts with IDs and ensure we have text
-    const drafts = draftTexts.map(text => ({
+    // Format the draft with ID
+    const drafts = [{
       id: uuidv4(),
-      text: text || "Failed to generate a reply. Please try again.",
-    }));
+      text: draftText || "Failed to generate a reply. Please try again.",
+    }];
     
     return NextResponse.json({ drafts });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error generating drafts:', error);
     
     // Pass through specific error messages
@@ -116,8 +112,16 @@ export async function POST(request: NextRequest) {
       );
     }
     
+    // Return appropriate status code and message
+    if (error.message && error.message.includes('overloaded')) {
+      return NextResponse.json(
+        { error: 'Service temporarily unavailable. Please try again in a few moments.' },
+        { status: 503 }
+      );
+    }
+    
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to generate draft replies' },
+      { error: 'Failed to generate draft replies' },
       { status: 500 }
     );
   }

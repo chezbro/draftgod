@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { UserPreferences, getUserPreferences, updateUserPreferences } from '@/app/lib/db';
 import { getUserByUsername } from '@/app/lib/twitter';
 import { Plus, X, Save, RefreshCw } from 'lucide-react';
@@ -14,6 +14,26 @@ export default function Settings({ userId }: { userId: string }) {
   const [saving, setSaving] = useState(false);
   const [newMonitoredAccount, setNewMonitoredAccount] = useState('');
   const [newStyleAccount, setNewStyleAccount] = useState('');
+  const [monitoredAccounts, setMonitoredAccounts] = useState<string[]>([]);
+  const [styleAccounts, setStyleAccounts] = useState<string[]>([]);
+  const [customInstructions, setCustomInstructions] = useState('');
+
+  const loadPreferences = useCallback(async () => {
+    try {
+      setLoading(true);
+      const prefs = await getUserPreferences(userId);
+      if (prefs) {
+        setMonitoredAccounts(prefs.monitored_accounts || []);
+        setStyleAccounts(prefs.style_accounts || []);
+        setCustomInstructions(prefs.custom_instructions || '');
+      }
+    } catch (error) {
+      console.error('Error loading preferences:', error);
+      toast.error('Failed to load preferences');
+    } finally {
+      setLoading(false);
+    }
+  }, [userId]);
 
   useEffect(() => {
     console.log('Settings component mounted with userId:', userId);
@@ -22,21 +42,7 @@ export default function Settings({ userId }: { userId: string }) {
       return;
     }
     loadPreferences();
-  }, [userId]);
-
-  async function loadPreferences() {
-    try {
-      console.log('Loading preferences for userId:', userId);
-      const prefs = await getUserPreferences(userId);
-      console.log('Loaded preferences:', prefs);
-      setPreferences(prefs);
-    } catch (error) {
-      console.error('Error loading preferences:', error);
-      toast.error('Failed to load preferences');
-    } finally {
-      setLoading(false);
-    }
-  }
+  }, [loadPreferences, userId]);
 
   async function handleAddMonitoredAccount(e: React.FormEvent) {
     e.preventDefault();

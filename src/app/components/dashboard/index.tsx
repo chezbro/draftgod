@@ -1,8 +1,6 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 
-import { useState, useEffect } from 'react';
-import { io, Socket } from 'socket.io-client';
+import React, { useState, useEffect, useCallback } from 'react';
 import { DraftTweet, getDraftTweets } from '@/app/lib/db';
 import { postTweet, TwitterClientError } from '@/app/lib/twitter';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/app/components/ui/alert-dialog';
@@ -13,31 +11,48 @@ import { ErrorBoundary } from '../error-boundary';
 export default function Dashboard({ userId }: { userId: string }) {
   const [drafts, setDrafts] = useState<DraftTweet[]>([]);
   const [loading, setLoading] = useState(true);
-  const [socket, setSocket] = useState<Socket | null>(null);
+  const [socket, setSocket] = useState<WebSocket | null>(null);
 
-  useEffect(() => {
-    loadDrafts();
+  const loadDrafts = useCallback(async () => {
+    try {
+      setLoading(true);
+      const draftTweets = await getDraftTweets(userId);
+      setDrafts(draftTweets);
+    } catch (error) {
+      toast.error('Failed to load drafts');
+      console.error('Error loading drafts:', error);
+    } finally {
+      setLoading(false);
+    }
   }, [userId]);
 
   useEffect(() => {
-    const socket = io({
-      path: '/api/socket',
-    });
-
-    socket.on('connect', () => {
-      console.log('Connected to websocket');
-    });
-
-    socket.on('new_draft', () => {
-      loadDrafts();
-    });
-
+    loadDrafts();
+    
+    const socket = new WebSocket(`${process.env.NEXT_PUBLIC_WEBSOCKET_URL}/ws`);
+    
+    socket.onopen = () => {
+      console.log('WebSocket connected');
+      socket.send(JSON.stringify({ type: 'subscribe', userId }));
+    };
+    
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'new_draft') {
+        loadDrafts();
+      }
+    };
+    
+    socket.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+    
     setSocket(socket);
 
     return () => {
-      socket.disconnect();
+      socket.close();
     };
-  }, []);
+  }, [userId, loadDrafts]);
 
   async function handleApprove(draft: DraftTweet) {
     try {
@@ -53,24 +68,78 @@ export default function Dashboard({ userId }: { userId: string }) {
     }
   }
 
-  async function loadDrafts() {
-    try {
-      setLoading(true);
-      const draftTweets = await getDraftTweets(userId);
-      setDrafts(draftTweets);
-    } catch (error) {
-      toast.error('Failed to load drafts');
-      console.error('Error loading drafts:', error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ... rest of the component code ...
-
   return (
     <ErrorBoundary>
-      {/* ... existing JSX ... */}
+      <div className="space-y-8">
+        <header className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Draft Replies</h1>
+          <button 
+            onClick={() => loadDrafts()}
+            className="p-2 hover:bg-foreground/5 rounded-full transition-colors"
+          >
+            <RefreshCw className="w-5 h-5" />
+          </button>
+        </header>
+
+        {loading ? (
+          <div className="flex items-center justify-center min-h-[400px]">
+            <RefreshCw className="w-6 h-6 animate-spin text-foreground/50" />
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {drafts.map((draft) => (
+              <div 
+                key={draft.id}
+                className="p-6 rounded-xl border border-foreground/10 bg-background hover:border-foreground/20 transition-colors"
+              >
+                <div className="space-y-4">
+                  <div className="text-sm text-foreground/60">
+                    Replying to: {draft.original_tweet_text}
+                  </div>
+                  
+                  <p className="text-lg">{draft.draft_text}</p>
+
+                  <div className="flex gap-2 justify-end">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <button className="p-2 hover:bg-green-500/10 rounded-full text-green-500 transition-colors">
+                          <Check className="w-5 h-5" />
+                        </button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Approve and Post Reply?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will post the reply to Twitter immediately.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleApprove(draft)}
+                          >
+                            Approve & Post
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+
+                    <button className="p-2 hover:bg-red-500/10 rounded-full text-red-500 transition-colors">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {drafts.length === 0 && (
+              <div className="text-center py-12 text-foreground/60">
+                No draft replies yet. They'll appear here when your monitored accounts tweet.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </ErrorBoundary>
   );
 } 

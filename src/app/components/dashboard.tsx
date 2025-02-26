@@ -1,30 +1,33 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { DraftTweet, getDraftTweets } from '@/app/lib/db';
 import { postTweet } from '@/app/lib/twitter';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Check, X, RefreshCw } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 export default function Dashboard({ userId }: { userId: string }) {
   const [drafts, setDrafts] = useState<DraftTweet[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDraft, setSelectedDraft] = useState<DraftTweet | null>(null);
 
-  useEffect(() => {
-    loadDrafts();
-  }, [userId]);
-
-  async function loadDrafts() {
+  const loadDrafts = useCallback(async () => {
     try {
+      setLoading(true);
       const draftTweets = await getDraftTweets(userId);
       setDrafts(draftTweets);
     } catch (error) {
       console.error('Error loading drafts:', error);
+      toast.error('Failed to load drafts');
     } finally {
       setLoading(false);
     }
-  }
+  }, [userId]);
+
+  useEffect(() => {
+    loadDrafts();
+  }, [loadDrafts]);
 
   async function handleApprove(draft: DraftTweet) {
     try {

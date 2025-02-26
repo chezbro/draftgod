@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { UserPreferences, getUserPreferences, updateUserPreferences } from '@/app/lib/db';
-import { getUserByUsername } from '@/app/lib/twitter';
+import { getUserByUsername, TwitterClientError } from '@/app/lib/twitter';
 import { Plus, X, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -13,23 +13,26 @@ export default function Settings({ userId }: { userId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadPreferences();
-  }, [userId]);
-
-  async function loadPreferences() {
+  const loadPreferences = useCallback(async () => {
     try {
       console.log('Loading preferences for userId:', userId);
-      const userPrefs = await getUserPreferences(userId);
-      console.log('Loaded preferences:', userPrefs);
-      setPreferences(userPrefs);
+      const response = await fetch('/api/preferences');
+      if (!response.ok) {
+        throw new Error('Failed to load preferences');
+      }
+      const data = await response.json();
+      setPreferences(data);
     } catch (error) {
       console.error('Error loading preferences:', error);
       toast.error('Failed to load preferences');
     } finally {
       setLoading(false);
     }
-  }
+  }, [userId]);
+
+  useEffect(() => {
+    loadPreferences();
+  }, [loadPreferences]);
 
   async function handleAddMonitoredAccount(e: React.FormEvent) {
     e.preventDefault();
@@ -131,24 +134,21 @@ export default function Settings({ userId }: { userId: string }) {
             value={newMonitoredAccount}
             onChange={(e) => setNewMonitoredAccount(e.target.value)}
             placeholder="Twitter username"
-            className="flex-1 px-3 py-2 border rounded-md bg-background"
-            required
+            className="flex-1 px-4 py-2 rounded-lg border border-foreground/10 bg-background focus:outline-none focus:ring-2 focus:ring-foreground/20"
           />
           <button
             type="submit"
-            className="flex items-center gap-2 px-4 py-2 bg-foreground text-background rounded-md hover:bg-foreground/90"
+            className="p-2 hover:bg-foreground/5 rounded-lg transition-colors"
           >
-            <Plus className="w-4 h-4" />
-            Add
+            <Plus className="w-5 h-5" />
           </button>
         </form>
 
         <div className="flex flex-wrap gap-2">
-          {console.log('Rendering monitored accounts:', preferences?.monitored_accounts)}
           {preferences?.monitored_accounts?.map((account) => (
             <div
               key={account}
-              className="flex items-center justify-between px-3 py-2 border rounded-md"
+              className="flex items-center gap-2 px-3 py-1 rounded-full bg-foreground/5"
             >
               <span>@{account}</span>
               <button
@@ -161,7 +161,7 @@ export default function Settings({ userId }: { userId: string }) {
                     ),
                   });
                 }}
-                className="text-red-500 hover:text-red-600"
+                className="hover:text-red-500 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>

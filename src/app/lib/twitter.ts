@@ -1,6 +1,9 @@
 import { TwitterApi } from 'twitter-api-v2';
 import { createHmac } from 'crypto';
 import { getCachedUserTweets, storeUserTweets } from './db';
+import { getSession } from 'next-auth/react';
+import { getServerSession } from 'next-auth';
+import { authOptions } from './auth';
 
 // Initialize the Twitter client with OAuth 2.0 credentials
 const twitter = new TwitterApi({
@@ -8,18 +11,36 @@ const twitter = new TwitterApi({
   clientSecret: process.env.TWITTER_CLIENT_SECRET!,
 });
 
-// For authenticated requests, we need to use a client with proper access token
-// This should be the token obtained during OAuth flow
+// eslint-disable-next-line prefer-const
 let authenticatedClient: TwitterApi | null = null;
 
 // Create a client with bearer token for app-only operations
 const appOnlyClient = new TwitterApi(process.env.TWITTER_BEARER_TOKEN!);
 
 // Function to get the appropriate client based on the operation
-function getClient() {
-  // For operations that require user authentication, use the authenticated client
-  // Otherwise fall back to the app-only client
-  return authenticatedClient || appOnlyClient;
+// This now accepts an access token to create a user-authenticated client when needed
+async function getClient(accessToken?: string) {
+  // If an access token is provided, create a user-authenticated client
+  if (accessToken) {
+    return new TwitterApi(accessToken);
+  }
+  
+  // For operations that require user authentication but no token was provided,
+  // try to get the token from the session
+  if (!authenticatedClient) {
+    try {
+      // For server components/API routes
+      const session = await getServerSession(authOptions);
+      if (session?.accessToken) {
+        return new TwitterApi(session.accessToken);
+      }
+    } catch (error) {
+      console.warn('Could not get server session, falling back to app-only client');
+    }
+  }
+  
+  // Fall back to the app-only client for operations that don't require user auth
+  return appOnlyClient;
 }
 
 export type Tweet = {
@@ -41,19 +62,119 @@ export class TwitterClientError extends Error {
   }
 }
 
-export async function postTweet(text: string, reply_to?: string) {
+export async function postTweet(text: string, replyToId?: string): Promise<any> {
   try {
-    const tweet = await getClient().v2.tweet(text, {
-      reply: reply_to ? { in_reply_to_tweet_id: reply_to } : undefined,
+    console.log(`Posting tweet${replyToId ? ' as reply' : ''}: ${text}`);
+    
+    // Check if we're in mock mode
+    if (process.env.MOCK_TWITTER_API === 'true') {
+      console.log('Using mock Twitter API for posting tweet');
+      return {
+        id: 'mock-tweet-id-' + Date.now(),
+        text: text,
+      };
+    }
+    
+    // Verify that we have all required credentials before making the API call
+    const requiredEnvVars = [
+      'TWITTER_API_KEY',
+      'TWITTER_API_SECRET',
+      'TWITTER_ACCESS_TOKEN',
+      'TWITTER_ACCESS_SECRET'
+    ];
+    
+    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+    
+    if (missingVars.length > 0) {
+      console.error(`Missing required Twitter API credentials: ${missingVars.join(', ')}`);
+      throw new TwitterClientError({
+        error: true,
+        code: 401,
+        data: {
+          title: 'Configuration Error',
+          detail: `Missing Twitter API credentials: ${missingVars.join(', ')}`,
+          status: 401
+        }
+      });
+    }
+    
+    // Create a Twitter client with OAuth 1.0a credentials for posting tweets
+    // This is different from the app-only client used for reading tweets
+    const userClient = new TwitterApi({
+      appKey: process.env.TWITTER_API_KEY!,
+      appSecret: process.env.TWITTER_API_SECRET!,
+      accessToken: process.env.TWITTER_ACCESS_TOKEN!,
+      accessSecret: process.env.TWITTER_ACCESS_SECRET!,
     });
-    return tweet.data;
-  } catch (error) {
+    
+    console.log('Twitter client created with OAuth 1.0a credentials');
+    
+    // Create the request payload
+    const payload: any = {
+      text: text,
+    };
+    
+    // Add reply parameters if this is a reply
+    if (replyToId) {
+      payload.reply = {
+        in_reply_to_tweet_id: replyToId
+      };
+    }
+    
+    // Make the API request using the v2 API
+    console.log('Sending tweet with payload:', JSON.stringify(payload));
+    const response = await userClient.v2.tweet(text, replyToId ? {
+      reply: {
+        in_reply_to_tweet_id: replyToId
+      }
+    } : undefined);
+    
+    console.log('Tweet posted successfully:', response.data.id);
+    return response.data;
+  } catch (error: any) {
     console.error('Error posting tweet:', error);
-    throw new TwitterClientError(error);
+    console.error('Error details:', JSON.stringify(error, null, 2));
+    
+    // Provide more specific error messages for common issues
+    if (error.code === 401 || (error.errors && error.errors[0]?.code === 32)) {
+      console.error('Twitter API authentication failed. Check your credentials.');
+      throw new TwitterClientError({
+        error: true,
+        code: 401,
+        data: {
+          title: 'Authentication Failed',
+          detail: 'Twitter API authentication failed. Your API keys or tokens may be invalid or expired.',
+          status: 401
+        }
+      });
+    } else if (error.code === 403 || (error.errors && error.errors[0]?.code === 220)) {
+      console.error('Twitter API permission denied. Check your app permissions.');
+      throw new TwitterClientError({
+        error: true,
+        code: 403,
+        data: {
+          title: 'Permission Denied',
+          detail: 'Your Twitter app may not have the required permissions to post tweets.',
+          status: 403
+        }
+      });
+    }
+    
+    // For other errors, pass through the original error with more details
+    throw new TwitterClientError({
+      error: true,
+      code: error.code || 500,
+      data: {
+        title: 'Twitter API Error',
+        detail: error.message || 'Unknown error occurred when posting tweet',
+        errors: error.errors || [],
+        status: error.code || 500
+      }
+    });
   }
 }
 
-export async function setupWebhook(webhookUrl: string) {
+export async function setupWebhook(webhookUrl: string): Promise<any> {
   try {
     // Register webhook URL with Twitter
     const webhook = await getClient().v2.createWebhook({
@@ -75,7 +196,7 @@ export async function setupWebhook(webhookUrl: string) {
   }
 }
 
-export async function getUserByUsername(username: string) {
+export async function getUserByUsername(username: string): Promise<any> {
   try {
     // Use the server-side client
     const user = await getClient().v2.userByUsername(username, {
@@ -92,7 +213,7 @@ export async function getUserByUsername(username: string) {
   }
 }
 
-export async function startUserStream(userId: string, onTweet: (tweet: Tweet) => void) {
+export async function startUserStream(userId: string, onTweet: (tweet: Tweet) => void): Promise<any> {
   try {
     const stream = await getClient().v2.searchStream({
       'tweet.fields': ['author_id', 'created_at'],
@@ -141,7 +262,7 @@ export function validateWebhookRequest(
 // Add a simple in-memory cache for tweets
 const tweetCache = new Map<string, any>();
 
-export async function getTweetById(tweetId: string) {
+export async function getTweetById(tweetId: string): Promise<any> {
   // Check cache first
   if (tweetCache.has(tweetId)) {
     console.log(`Using cached tweet data for ID: ${tweetId}`);
@@ -217,7 +338,7 @@ function setRateLimited(endpoint: string, resetTimeSeconds?: number) {
 }
 
 // Add a function to get a user's recent tweets
-export async function getUserTweets(username: string, count = 10) {
+export async function getUserTweets(username: string, count = 10): Promise<any> {
   try {
     // Check in-memory cache first
     const cacheKey = `user_tweets:${username}`;

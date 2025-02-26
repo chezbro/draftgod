@@ -1,11 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { generateDraftReply } from '@/app/lib/anthropic';
 import { getUserPreferences, saveDraftTweet } from '@/app/lib/db';
 import { createHmac } from 'crypto';
 import { notifyUser } from '@/app/lib/socket';
+import { validateWebhookRequest } from '@/app/lib/twitter';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
